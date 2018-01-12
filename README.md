@@ -41,11 +41,11 @@ Providers are registered as `Injector` services using SilverStripe’s YAML conf
 For example, to setup Facebook as a provider, first install the [Facebook OAuth2 package](https://github.com/thephpleague/oauth2-facebook), and then add the following to your YAML config:
 
 ```yml
-Injector:
-  ProviderFactory:
+SilverStripe\Core\Injector\Injector:
+  Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory:
     properties:
       providers:
-        'Facebook': '%$FacebookProvider'
+        Facebook: '%$FacebookProvider'
   FacebookProvider:
     class: 'League\OAuth2\Client\Provider\Facebook'
     constructor:

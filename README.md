@@ -14,9 +14,25 @@ If you’re looking for “Log in with &lt;provider&gt;” functionality, take a
 
 This module also does not store access tokens in the database. If this is a requirement of your application, you will need to build your own models to handle this, and set up appropriate token handlers.
 
+## Requirements
+
+- SilverStripe 4.x
+- The PHP League Oauth2 Client (installed via composer)
+
 ## Installation
 
 This module must be installed with composer. Run `composer require bigfork/silverstripe-oauth:*` from the command line, and then run a `dev/build`.
+
+Note: if you'd like to install this particular fork, add
+```json
+   "repositories" : [
+        {
+            "type":"vcs",
+            "url":"https://github.com/rookie-me/silverstripe-oauth"
+        }
+    ]
+```
+to your `composer.json`.
 
 ## Configuration
 
@@ -37,9 +53,8 @@ Injector:
         clientId: '12345678987654321'
         clientSecret: 'geisjgoesingoi3h1521onnro12rin'
         graphApiVersion: 'v2.6'
+        redirectUri: 'http://mysite.local/oauth/callback'
 ```
-
-Note that in the above example, the required `redirectUri` constructor argument is missing. This module will automatically update the service configuration to add this argument to all providers, to save having to update the URL when moving between environments/domain names. If the `redirectUri` argument is present, it will not be overridden.
 
 ---
 
@@ -99,4 +114,10 @@ class ImportEventsHandler implements TokenHandler
 }
 ```
 
-Throwing an exception from the `handleToken()` method will result in all other handlers being cancelled, the exception message being logged, and a "400 Bad Request" error page being shown to the user. The method can also return an instance of `SS_HTTPResponse` which will be output to the browser after all remaining handlers have been run.
+Throwing an exception from the `handleToken()` method will result in all other handlers being cancelled, the exception message being logged, and a "400 Bad Request" error page being shown to the user. The method can also return an instance of `HTTPResponse` which will be output to the browser after all remaining handlers have been run.
+
+
+## Notes
+There are some components of the original module that have yet to be updated:
+- Unit Tests
+- Automatically updating the service configuration with `redirectUri` config option if left blank

@@ -2,10 +2,11 @@
 
 namespace Bigfork\SilverStripeOAuth\Client\Helper;
 
-use Config;
-use Controller;
-use Director;
-use Injector;
+use Bigfork\SilverStripeOAuth\Client\Control\Controller;
+use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
+use SilverStripe\Control\Director;
+use SilverStripe\Core\Config\Config;
+use SilverStripe\Core\Injector\Injector;
 
 class Helper
 {
@@ -22,18 +23,14 @@ class Helper
      */
     public static function buildAuthorisationUrl($provider, $context = '', array $scopes = [])
     {
-        $controller = Injector::inst()->get('Bigfork\SilverStripeOAuth\Client\Control\Controller');
+        $controller = Injector::inst()->get(Controller::class);
         $data = [
             'provider' => $provider,
             'context' => $context,
             'scope' => $scopes
         ];
 
-        return Controller::join_links(
-            Director::absoluteBaseURL(),
-            $controller->Link(),
-            'authenticate/?' . http_build_query($data)
-        );
+        return $controller->AbsoluteLink('authenticate') . '?' . http_build_query($data);
     }
 
     /**
@@ -42,7 +39,7 @@ class Helper
      */
     public static function addRedirectUriToConfigs()
     {
-        $factoryConfig = Config::inst()->get('Injector', 'ProviderFactory');
+        $factoryConfig = Config::inst()->get( Injector::class, ProviderFactory::class );
         $providers = $factoryConfig['properties']['providers'];
 
         foreach ($providers as $name => $spec) {
@@ -53,11 +50,11 @@ class Helper
 
             // Trim %$ServiceName to ServiceName
             $serviceName = substr($spec, 2);
-            $serviceConfig = (array)Config::inst()->get('Injector', $serviceName);
+            $serviceConfig = (array)Config::inst()->get(Injector::class, $serviceName);
 
             if (!empty($serviceConfig)) {
                 $serviceConfig = static::addRedirectUriToServiceConfig($serviceConfig);
-                Config::inst()->update('Injector', $serviceName, $serviceConfig);
+                // Config::inst()->update(Injector::class, $serviceName, $serviceConfig); // @todo - sort out a way to do this
                 Injector::inst()->load(array($serviceName => $serviceConfig));
             }
         }
@@ -92,7 +89,7 @@ class Helper
             return $configUri;
         }
 
-        $controller = Injector::inst()->get('Bigfork\SilverStripeOAuth\Client\Control\Controller');
-        return Controller::join_links($controller->AbsoluteLink(), 'callback/');
+        $controller = Injector::inst()->get(Controller::class);
+        return $controller->AbsoluteLink('callback');
     }
 }

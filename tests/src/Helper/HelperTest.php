@@ -2,20 +2,20 @@
 
 namespace Bigfork\SilverStripeOAuth\Client\Test\Helper;
 
+use Bigfork\SilverStripeOAuth\Client\Control\Controller;
 use Bigfork\SilverStripeOAuth\Client\Helper\Helper;
 use Bigfork\SilverStripeOAuth\Client\Test\TestCase;
-use Config;
-use Controller;
-use Director;
-use Injector;
 use ReflectionMethod;
+use SilverStripe\Control\Director;
+use SilverStripe\Core\Config\Config;
+use SilverStripe\Core\Injector\Injector;
 
 class HelperTest extends TestCase
 {
     public function testBuildAuthorisationUrl()
     {
-        $controller = new HelperTest_Controller;
-        Injector::inst()->registerService($controller, 'Bigfork\SilverStripeOAuth\Client\Control\Controller');
+        $controller = new HelperTest_Controller();
+        Injector::inst()->registerService($controller, Controller::class);
 
         $url = Helper::buildAuthorisationUrl('ProviderName', 'testcontext', ['test_scope']);
 

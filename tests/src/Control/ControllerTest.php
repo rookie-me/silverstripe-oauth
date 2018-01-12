@@ -3,15 +3,17 @@
 namespace Bigfork\SilverStripeOAuth\Client\Test\Control;
 
 use Bigfork\SilverStripeOAuth\Client\Control\Controller;
+use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
+use Bigfork\SilverStripeOAuth\Client\Handler\TokenHandler;
 use Bigfork\SilverStripeOAuth\Client\Test\TestCase;
-use Config;
-use Director;
-use Injector;
-use OAuthAccessToken;
 use ReflectionMethod;
-use SS_HTTPRequest;
-use SS_HTTPResponse;
-use SS_HTTPResponse_Exception;
+use SilverStripe\Control\Director;
+use SilverStripe\Control\HTTPRequest;
+use SilverStripe\Control\HTTPResponse;
+use SilverStripe\Control\HTTPResponse_Exception;
+use SilverStripe\Control\Session;
+use SilverStripe\Core\Config\Config;
+use SilverStripe\Core\Injector\Injector;
 
 class ControllerTest extends TestCase
 {
@@ -20,19 +22,19 @@ class ControllerTest extends TestCase
         $back = Director::absoluteBaseURL() . 'test/';
         $controller = new Controller;
         $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             'findBackUrl'
         );
         $reflectionMethod->setAccessible(true);
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['requestVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar']);
         $mockRequest->expects($this->exactly(2))
             ->method('requestVar')
             ->with('BackURL')
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['requestVar', 'isAjax', 'getHeader']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar', 'isAjax', 'getHeader']);
         $mockRequest->expects($this->at(0))
             ->method('requestVar')
             ->with('BackURL')
@@ -50,7 +52,7 @@ class ControllerTest extends TestCase
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['requestVar', 'isAjax', 'getHeader']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar', 'isAjax', 'getHeader']);
         $mockRequest->expects($this->at(0))
             ->method('requestVar')
             ->with('BackURL')
@@ -68,7 +70,7 @@ class ControllerTest extends TestCase
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['requestVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar']);
         $mockRequest->expects($this->exactly(2))
             ->method('requestVar')
             ->with('BackURL')
@@ -79,25 +81,25 @@ class ControllerTest extends TestCase
     public function testGetReturnUrl()
     {
         $back = Director::absoluteBaseURL() . 'test/';
-        $controller = new Controller;
+        $controller = new Controller();
         $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             'getReturnUrl'
         );
         $reflectionMethod->setAccessible(true);
 
-        $mockSession = $this->getConstructorlessMock('Session', ['inst_get']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['get']);
         $mockSession->expects($this->once())
-            ->method('inst_get')
+            ->method('get')
             ->with('oauth2.backurl')
             ->will($this->returnValue($back));
 
         $controller->setSession($mockSession);
         $this->assertEquals($back, $reflectionMethod->invoke($controller));
 
-        $mockSession = $this->getConstructorlessMock('Session', ['inst_get']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['get']);
         $mockSession->expects($this->once())
-            ->method('inst_get')
+            ->method('get')
             ->with('oauth2.backurl')
             ->will($this->returnValue('http://1337h4x00r.com/geniune-oauth-url/i-promise'));
 
@@ -110,7 +112,7 @@ class ControllerTest extends TestCase
         // Store original
         $injector = Injector::inst();
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['getVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getVar']);
         $mockRequest->expects($this->at(0))
             ->method('getVar')
             ->with('provider')
@@ -140,7 +142,7 @@ class ControllerTest extends TestCase
             ->will($this->returnValue('mockstate'));
 
         $mockProviderFactory = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory',
+            ProviderFactory::class,
             ['getProvider']
         );
         $mockProviderFactory->expects($this->once())
@@ -148,9 +150,9 @@ class ControllerTest extends TestCase
             ->with('ProviderName')
             ->will($this->returnValue($mockProvider));
 
-        $mockSession = $this->getConstructorlessMock('Session', ['inst_set']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['set']);
         $mockSession->expects($this->once())
-            ->method('inst_set')
+            ->method('set')
             ->with('oauth2', [
                 'state' => 'mockstate',
                 'provider' => 'ProviderName',
@@ -159,14 +161,14 @@ class ControllerTest extends TestCase
                 'backurl' => 'http://mysite.com/return'
             ]);
 
-        $mockInjector = $this->getMock('Injector', ['get']);
+        $mockInjector = $this->getMock(Injector::class, ['get']);
         $mockInjector->expects($this->once())
             ->method('get')
             ->with('ProviderFactory')
             ->will($this->returnValue($mockProviderFactory));
 
         $mockController = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             ['findBackUrl', 'redirect']
         );
         $mockController->expects($this->at(0))
@@ -176,7 +178,7 @@ class ControllerTest extends TestCase
         $mockController->expects($this->at(1))
             ->method('redirect')
             ->with('http://example.com/oauth')
-            ->will($this->returnValue($response = new SS_HTTPResponse));
+            ->will($this->returnValue($response = new HTTPResponse()));
 
         Injector::set_inst($mockInjector);
 
@@ -189,7 +191,7 @@ class ControllerTest extends TestCase
 
     public function testAuthenticateMissingRequiredData()
     {
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['getVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getVar']);
         $mockRequest->expects($this->at(0))
             ->method('getVar')
             ->with('provider')
@@ -206,8 +208,8 @@ class ControllerTest extends TestCase
         $controller = new Controller();
         try {
             $response = $controller->authenticate($mockRequest);
-            $this->fail('SS_HTTPResponse_Exception was not thrown');
-        } catch (SS_HTTPResponse_Exception $e) {
+            $this->fail('HTTPResponse_Exception was not thrown');
+        } catch (HTTPResponse_Exception $e) {
             $this->assertEquals(404, $e->getResponse()->getStatusCode());
         }
     }
@@ -217,7 +219,7 @@ class ControllerTest extends TestCase
         // Store original
         $injector = Injector::inst();
 
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest', ['getVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getVar']);
         $mockRequest->expects($this->once())
             ->method('getVar')
             ->with('code')
@@ -235,7 +237,7 @@ class ControllerTest extends TestCase
             ->will($this->returnValue($mockAccessToken));
 
         $mockProviderFactory = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory',
+            ProviderFactory::class,
             ['getProvider']
         );
         $mockProviderFactory->expects($this->once())
@@ -244,14 +246,14 @@ class ControllerTest extends TestCase
             ->will($this->returnValue($mockProvider));
 
         $mockTokenHandler = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Handler\TokenHandler',
+            TokenHandler::class,
             ['handleToken']
         );
         $mockTokenHandler->expects($this->once())
             ->method('handleToken')
             ->with($mockAccessToken, $mockProvider);
 
-        $mockInjector = $this->getMock('Injector', ['get', 'create']);
+        $mockInjector = $this->getMock(Injector::class, ['get', 'create']);
         $mockInjector->expects($this->at(0))
             ->method('get')
             ->with('ProviderFactory')
@@ -261,21 +263,21 @@ class ControllerTest extends TestCase
             ->with('TestTokenHandler')
             ->will($this->returnValue($mockTokenHandler));
 
-        $mockSession = $this->getConstructorlessMock('Session', ['inst_get', 'inst_clear']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['get', 'clear']);
         $mockSession->expects($this->at(0))
-            ->method('inst_get')
+            ->method('get')
             ->with('oauth2.provider')
             ->will($this->returnValue('ProviderName'));
         $mockSession->expects($this->at(1))
-            ->method('inst_get')
+            ->method('get')
             ->with('oauth2.context')
             ->will($this->returnValue('testcontext'));
         $mockSession->expects($this->at(2))
-            ->method('inst_clear')
+            ->method('clear')
             ->with('oauth2');
 
         $mockController = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             ['getSession', 'validateState', 'getHandlersForContext', 'getReturnUrl', 'redirect']
         );
         $mockController->expects($this->at(0))
@@ -295,7 +297,7 @@ class ControllerTest extends TestCase
         $mockController->expects($this->at(4))
             ->method('redirect')
             ->with('http://mysite.com/return')
-            ->will($this->returnValue($response = new SS_HTTPResponse));
+            ->will($this->returnValue($response = new HTTPResponse()));
 
         Injector::set_inst($mockInjector);
 
@@ -308,15 +310,15 @@ class ControllerTest extends TestCase
 
     public function testCallbackInvalidState()
     {
-        $mockRequest = $this->getConstructorlessMock('SS_HTTPRequest');
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class);
 
-        $mockSession = $this->getConstructorlessMock('Session', ['inst_clear']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['clear']);
         $mockSession->expects($this->once())
-            ->method('inst_clear')
+            ->method('clear')
             ->with('oauth2');
 
         $mockController = $this->getMock(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             ['getSession', 'validateState']
         );
         $mockController->expects($this->at(0))
@@ -329,8 +331,8 @@ class ControllerTest extends TestCase
 
         try {
             $response = $mockController->callback($mockRequest);
-            $this->fail('SS_HTTPResponse_Exception was not thrown');
-        } catch (SS_HTTPResponse_Exception $e) {
+            $this->fail('HTTPResponse_Exception was not thrown');
+        } catch (HTTPResponse_Exception $e) {
             $this->assertEquals(400, $e->getResponse()->getStatusCode());
             $this->assertEquals('Invalid session state.', $e->getResponse()->getBody());
         }
@@ -341,12 +343,12 @@ class ControllerTest extends TestCase
      */
     public function testGetHandlersForContextWithNoHandlers()
     {
-        Config::inst()->remove('Bigfork\SilverStripeOAuth\Client\Control\Controller', 'token_handlers');
-        Config::inst()->update('Bigfork\SilverStripeOAuth\Client\Control\Controller', 'token_handlers', []);
+        Config::inst()->remove(Controller::class, 'token_handlers');
+        Config::inst()->update(Controller::class, 'token_handlers', []);
 
         $controller = new Controller;
         $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             'getHandlersForContext'
         );
         $reflectionMethod->setAccessible(true);
@@ -355,8 +357,8 @@ class ControllerTest extends TestCase
 
     public function testGetHandlersForContext()
     {
-        Config::inst()->remove('Bigfork\SilverStripeOAuth\Client\Control\Controller', 'token_handlers');
-        Config::inst()->update('Bigfork\SilverStripeOAuth\Client\Control\Controller', 'token_handlers', [
+        Config::inst()->remove(Controller::class, 'token_handlers');
+        Config::inst()->update(Controller::class, 'token_handlers', [
             'globalhandlertwo' => [
                 'priority' => 3, 'context' => '*', 'class' => 'GlobalHandlerTwo'
             ],
@@ -373,7 +375,7 @@ class ControllerTest extends TestCase
 
         $controller = new Controller;
         $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Control\Controller',
+            Controller::class,
             'getHandlersForContext'
         );
         $reflectionMethod->setAccessible(true);

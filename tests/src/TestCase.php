@@ -2,7 +2,8 @@
 
 namespace Bigfork\SilverStripeOAuth\Client\Test;
 
-use SapphireTest;
+use PHPUnit_Framework_MockObject_MockObject;
+use SilverStripe\Dev\SapphireTest;
 
 class TestCase extends SapphireTest
 {

@@ -4,6 +4,7 @@ namespace Bigfork\SilverStripeOAuth\Client\Test\Factory;
 
 use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
 use Bigfork\SilverStripeOAuth\Client\Test\TestCase;
+use Psr\Log\InvalidArgumentException;
 
 class ProviderFactoryTest extends TestCase
 {

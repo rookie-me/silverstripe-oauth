@@ -2,21 +2,24 @@
 
 namespace Bigfork\SilverStripeOAuth\Client\Control;
 
-use Controller as SilverStripeController;
-use Director;
+use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
+use Psr\Log\LoggerInterface;
+use SilverStripe\Control\Controller as SilverStripeController;
+use SilverStripe\Control\Director;
 use Exception;
-use Injector;
+use SilverStripe\Core\Injector\Injector;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
-use League\OAuth2\Client\Token\AccessToken;
-use Member;
-use OAuthAccessToken;
-use OAuthScope;
-use SS_HTTPRequest;
-use SS_HTTPResponse;
-use SS_Log;
+use SilverStripe\Control\HTTPRequest;
+use SilverStripe\Control\HTTPResponse;
+use SilverStripe\Control\HTTPResponse_Exception;
 
 class Controller extends SilverStripeController
 {
+    /**
+     * @var string
+     */
+    private static $url_segment = "oauth";
+
     /**
      * @var array
      */
@@ -28,13 +31,15 @@ class Controller extends SilverStripeController
     /**
      * Copied from \Controler::redirectBack()
      *
-     * @param SS_HTTPRequest $request
+     * @param HTTPRequest $request
      * @return string|null
      */
-    protected function findBackUrl(SS_HTTPRequest $request)
+    protected function findBackUrl(HTTPRequest $request)
     {
         if ($request->requestVar('BackURL')) {
             $backUrl = $request->requestVar('BackURL');
+        } elseif($request->getSession()->get('BackURL')) {
+            $backUrl = $request->getSession()->get('BackURL');
         } elseif ($request->isAjax() && $request->getHeader('X-Backurl')) {
             $backUrl = $request->getHeader('X-Backurl');
         } elseif ($request->getHeader('Referer')) {
@@ -55,7 +60,8 @@ class Controller extends SilverStripeController
      */
     protected function getReturnUrl()
     {
-        $backUrl = $this->getSession()->inst_get('oauth2.backurl');
+        $request = $this->getRequest();
+        $backUrl = $request->getSession()->get('oauth2.backurl');
         if (!$backUrl || !Director::is_site_url($backUrl)) {
             $backUrl = Director::absoluteBaseURL();
         }
@@ -64,19 +70,21 @@ class Controller extends SilverStripeController
     }
 
     /**
+     * @param null $action
      * @return string
      */
-    public function Link()
-    {
-        return 'oauth/';
+    public function Link($action = null){
+        // Check configured url_segment
+        $url = $this->config()->get('url_segment');
+        return self::join_links($url, $action, '/');
     }
 
     /**
      * @return string
      */
-    public function AbsoluteLink()
+    public function AbsoluteLink($action = null)
     {
-        return self::join_links(Director::absoluteBaseURL(), $this->Link());
+        return self::join_links(Director::absoluteBaseURL(), $this->Link($action));
     }
 
     /**
@@ -84,11 +92,11 @@ class Controller extends SilverStripeController
      * url with the provider's site and then redirects to it
      *
      * @todo allow whitelisting of scopes (per provider)?
-     * @param SS_HTTPRequest $request
-     * @return SS_HTTPResponse
-     * @throws SS_HTTPResponse_Exception
+     * @param HTTPRequest $request
+     * @return HTTPResponse
+     * @throws HTTPResponse_Exception
      */
-    public function authenticate(SS_HTTPRequest $request)
+    public function authenticate(HTTPRequest $request)
     {
         $providerName = $request->getVar('provider');
         $context = $request->getVar('context');
@@ -99,7 +107,7 @@ class Controller extends SilverStripeController
             $this->httpError(404);
         }
 
-        $provider = Injector::inst()->get('ProviderFactory')->getProvider($providerName);
+        $provider = Injector::inst()->get(ProviderFactory::class)->getProvider($providerName);
 
         // Ensure we always have scope to work with
         if (empty($scope)) {
@@ -108,7 +116,7 @@ class Controller extends SilverStripeController
 
         $url = $provider->getAuthorizationUrl(['scope' => $scope]);
 
-        $this->getSession()->inst_set('oauth2', [
+        $request->getSession()->set('oauth2', [
             'state' => $provider->getState(),
             'provider' => $providerName,
             'context' => $context,
@@ -122,28 +130,32 @@ class Controller extends SilverStripeController
     /**
      * The return endpoint after the user has authenticated with a provider
      *
-     * @param SS_HTTPRequest $request
+     * @param HTTPRequest $request
      * @return mixed
      */
-    public function callback(SS_HTTPRequest $request)
+    public function callback(HTTPRequest $request)
     {
-        $session = $this->getSession();
+        $session = $request->getSession();
 
         if (!$this->validateState($request)) {
-            $session->inst_clear('oauth2');
+            $session->clear('oauth2');
             return $this->httpError(400, 'Invalid session state.');
         }
 
-        $providerName = $session->inst_get('oauth2.provider');
-        $provider = Injector::inst()->get('ProviderFactory')->getProvider($providerName);
+        $providerName = $session->get('oauth2.provider');
+        $provider = Injector::inst()->get(ProviderFactory::class)->getProvider($providerName);
         $returnUrl = $this->getReturnUrl();
-
         try {
+            // Check for error_code here
+            if($request->requestVar('error_code')){
+                throw new Exception($request->requestVar('error_description'), $request->requestVar('error_code'));
+            }
+
             $accessToken = $provider->getAccessToken('authorization_code', [
                 'code' => $request->getVar('code')
             ]);
 
-            $handlers = $this->getHandlersForContext($session->inst_get('oauth2.context'));
+            $handlers = $this->getHandlersForContext($session->get('oauth2.context'));
 
             // Run handlers to process the token
             $results = [];
@@ -154,19 +166,19 @@ class Controller extends SilverStripeController
 
             // Handlers may return response objects
             foreach ($results as $result) {
-                if ($result instanceof SS_HTTPResponse) {
-                    $session->inst_clear('oauth2');
+                if ($result instanceof HTTPResponse) {
+                    $session->clear('oauth2');
                     return $result;
                 }
             }
         } catch (IdentityProviderException $e) {
-            SS_Log::log('OAuth IdentityProviderException: ' . $e->getMessage(), SS_Log::ERR);
-            return $this->httpError(400, 'Invalid access token.');
+            Injector::inst()->get(LoggerInterface::class)->error('OAuth IdentityProviderException: ' . $e->getMessage());
+            $this->httpError(400, 'Invalid access token. Please try again.');
         } catch (Exception $e) {
-            SS_Log::log('OAuth Exception: ' . $e->getMessage(), SS_Log::ERR);
-            return $this->httpError(400, $e->getMessage());
+            Injector::inst()->get(LoggerInterface::class)->error('OAuth Exception: ' . $e->getMessage());
+            $this->httpError(400, 'Invalid access token. Please try again.');
         } finally {
-            $session->inst_clear('oauth2');
+            $session->clear('oauth2');
         }
 
         return $this->redirect($returnUrl);
@@ -214,19 +226,19 @@ class Controller extends SilverStripeController
     /**
      * Validate the request's state against the one stored in session
      *
-     * @param SS_HTTPRequest $request
+     * @param HTTPRequest $request
      * @return boolean
      */
-    public function validateState(SS_HTTPRequest $request)
+    public function validateState(HTTPRequest $request)
     {
         $state = $request->getVar('state');
-        $session = $this->getSession();
-        $data = $session->inst_get('oauth2');
+        $session = $request->getSession();
+        $data = $session->get('oauth2');
 
         // If we're lacking any required data, or the session state doesn't match
         // the one the provider returned, the request is invalid
         if (empty($data['state']) || empty($data['provider']) || empty($data['scope']) || $state !== $data['state']) {
-            $session->inst_clear('oauth2');
+            $session->clear('oauth2');
             return false;
         }
 

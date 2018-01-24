@@ -21,7 +21,9 @@ class ProviderFactoryTest extends TestCase
 
     public function testGetProvider()
     {
-        $mock = $this->getMock('Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory', ['getProviders']);
+        $mock = $this->getMockBuilder(ProviderFactory::class)
+            ->setMethods(['getProviders'])
+            ->getMock();
         $mock->expects($this->once())
             ->method('getProviders')
             ->will($this->returnValue(['ProviderName' => 'Result']));
@@ -34,7 +36,9 @@ class ProviderFactoryTest extends TestCase
      */
     public function testGetProviderNotSet()
     {
-        $mock = $this->getMock('Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory', ['getProviders']);
+        $mock = $this->getMockBuilder(ProviderFactory::class)
+            ->setMethods(['getProviders'])
+            ->getMock();
         $mock->expects($this->once())
             ->method('getProviders')
             ->will($this->returnValue(['ProviderName' => 'Result']));

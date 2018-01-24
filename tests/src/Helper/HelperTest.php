@@ -3,18 +3,24 @@
 namespace Bigfork\SilverStripeOAuth\Client\Test\Helper;
 
 use Bigfork\SilverStripeOAuth\Client\Control\Controller;
+use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
 use Bigfork\SilverStripeOAuth\Client\Helper\Helper;
 use Bigfork\SilverStripeOAuth\Client\Test\TestCase;
 use ReflectionMethod;
+use SilverStripe\Config\Collections\CachedConfigCollection;
+use SilverStripe\Config\Collections\MemoryConfigCollection;
+use SilverStripe\Control\Controller as SilverStripeController;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\Config\Config;
+use SilverStripe\Core\Config\ConfigLoader;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Injector\InjectorLoader;
 
 class HelperTest extends TestCase
 {
     public function testBuildAuthorisationUrl()
     {
-        $controller = new HelperTest_Controller();
+        $controller = new HelperTest_Controller;
         Injector::inst()->registerService($controller, Controller::class);
 
         $url = Helper::buildAuthorisationUrl('ProviderName', 'testcontext', ['test_scope']);
@@ -27,67 +33,72 @@ class HelperTest extends TestCase
 
     public function testAddRedirectUriToConfigs()
     {
-        // Store originals
-        $config = Config::inst();
-        $injector = Injector::inst();
-
         $uri = 'http://mysite.com/endpoint';
 
         $factoryConfig = ['properties' => ['providers' => ['ProviderName' => '%$ProviderService']]];
         $originalConfig = ['constructor' => ['Options' => ['apiKey' => '123']]];
         $expectedConfig = ['constructor' => ['Options' => ['apiKey' => '123', 'redirectUri' => $uri]]];
 
-        $mockConfig = $this->getMock('Config', ['get', 'update']);
+        $mockConfig = $this->getMockBuilder(CachedConfigCollection::class)
+            ->setMethods(['get', 'nest'])
+            ->getMock();
+        $mockMutableConfig = $this->getMockBuilder(MemoryConfigCollection::class)
+            ->setMethods(['set'])
+            ->getMock();
+
         $mockConfig->expects($this->at(0))
             ->method('get')
-            ->with('Injector', 'ProviderFactory')
+            ->with(Injector::class, ProviderFactory::class)
             ->will($this->returnValue($factoryConfig));
         $mockConfig->expects($this->at(1))
             ->method('get')
-            ->with('Injector', 'ProviderService')
+            ->with(Injector::class, 'ProviderService')
             ->will($this->returnValue($originalConfig));
         // This smells, because it makes assumptions about methods other than the one we're testing.
         // But mocking static methods sucks.
         $mockConfig->expects($this->at(2))
             ->method('get')
-            ->with('Bigfork\SilverStripeOAuth\Client\Helper\Helper', 'default_redirect_uri')
+            ->with(Helper::class, 'default_redirect_uri')
             ->will($this->returnValue($uri));
         $mockConfig->expects($this->at(3))
-            ->method('update')
-            ->with('Injector', 'ProviderService')
+            ->method('nest')
+            ->will($this->returnValue($mockMutableConfig));
+
+        $mockMutableConfig->expects($this->once())
+            ->method('set')
+            ->with(Injector::class, 'ProviderService')
             ->will($this->returnValue($expectedConfig));
 
-        $mockInjector = $this->getMock('Injector', ['load']);
+        $mockInjector = $this->getMockBuilder(Injector::class)
+            ->setMethods(['load'])
+            ->getMock();
         $mockInjector->expects($this->once())
             ->method('load')
             ->with(['ProviderService' => $expectedConfig]);
 
         // Inject mocks
-        Config::set_instance($mockConfig);
-        Injector::set_inst($mockInjector);
+        ConfigLoader::inst()->pushManifest($mockConfig);
+        InjectorLoader::inst()->pushManifest($mockInjector);
 
         // Run the test
         Helper::addRedirectUriToConfigs();
 
         // Restore things
-        Config::set_instance($config);
-        Injector::set_inst($injector);
+        ConfigLoader::inst()->popManifest();
+        InjectorLoader::inst()->popManifest();
     }
 
     public function testAddRedirectUriToServiceConfig()
     {
         $uri = 'http://mysite.com/endpoint';
-        Config::inst()->update('Bigfork\SilverStripeOAuth\Client\Helper\Helper', 'default_redirect_uri', $uri);
+        Config::modify()->set(Helper::class, 'default_redirect_uri', $uri);
 
         // This assertion smells, because it makes assumptions about methods other than the one we're testing.
         // But mocking static methods sucks.
         $originalConfig = ['constructor' => ['Options' => ['apiKey' => '123']]];
         $expectedConfig = ['constructor' => ['Options' => ['apiKey' => '123', 'redirectUri' => $uri]]];
 
-        $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Helper\Helper',
-            'addRedirectUriToServiceConfig'
-        );
+        $reflectionMethod = new ReflectionMethod(Helper::class, 'addRedirectUriToServiceConfig');
         $reflectionMethod->setAccessible(true);
 
         $result = $reflectionMethod->invoke(null, $originalConfig);
@@ -110,45 +121,39 @@ class HelperTest extends TestCase
 
     public function testGetRedirectUri()
     {
-        // Store originals
-        $config = Config::inst();
-        $injector = Injector::inst();
-
         // Setup reflection
-        $reflectionMethod = new ReflectionMethod(
-            'Bigfork\SilverStripeOAuth\Client\Helper\Helper',
-            'getRedirectUri'
-        );
+        $reflectionMethod = new ReflectionMethod(Helper::class, 'getRedirectUri');
         $reflectionMethod->setAccessible(true);
 
-        $mockConfig = $this->getMock('Config', ['get']);
+        $mockConfig = $this->getMockBuilder(CachedConfigCollection::class)
+            ->setMethods(['get'])
+            ->getMock();
         $mockConfig->expects($this->once())
             ->method('get')
-            ->with('Bigfork\SilverStripeOAuth\Client\Helper\Helper', 'default_redirect_uri')
+            ->with(Helper::class, 'default_redirect_uri')
             ->will($this->returnValue('http://foo.bar'));
 
-        Config::set_instance($mockConfig);
+        ConfigLoader::inst()->pushManifest($mockConfig);
         $this->assertEquals('http://foo.bar', $reflectionMethod->invoke(null));
-        Config::set_instance($config);
+        ConfigLoader::inst()->popManifest();
 
-        $mockInjector = $this->getMock('Injector', ['get']);
+        $mockInjector = $this->getMockBuilder(Injector::class)
+            ->setMethods(['get'])
+            ->getMock();
         $mockInjector->expects($this->once())
             ->method('get')
-            ->with('Bigfork\SilverStripeOAuth\Client\Control\Controller')
+            ->with(Controller::class)
             ->will($this->returnValue(new HelperTest_Controller()));
 
-        Injector::set_inst($mockInjector);
+        InjectorLoader::inst()->pushManifest($mockInjector);
         $this->assertEquals('http://mysite.com/helpertest/callback/', $reflectionMethod->invoke(null));
-        Injector::set_inst($injector);
+        InjectorLoader::inst()->popManifest();
     }
 }
 
-class HelperTest_Controller extends Controller
+class HelperTest_Controller extends SilverStripeController
 {
-    public function Link()
-    {
-        return 'helpertest/';
-    }
+    private static $url_segment = 'helpertest';
 
     public function AbsoluteLink()
     {

@@ -4,6 +4,7 @@ namespace Bigfork\SilverStripeOAuth\Client\Helper;
 
 use Bigfork\SilverStripeOAuth\Client\Control\Controller;
 use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
+use SilverStripe\Control\Controller as SilverStripeController;
 use SilverStripe\Control\Director;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
@@ -39,7 +40,7 @@ class Helper
      */
     public static function addRedirectUriToConfigs()
     {
-        $factoryConfig = Config::inst()->get( Injector::class, ProviderFactory::class );
+        $factoryConfig = Config::inst()->get(Injector::class, ProviderFactory::class);
         $providers = $factoryConfig['properties']['providers'];
 
         foreach ($providers as $name => $spec) {
@@ -50,12 +51,12 @@ class Helper
 
             // Trim %$ServiceName to ServiceName
             $serviceName = substr($spec, 2);
-            $serviceConfig = (array)Config::inst()->get(Injector::class, $serviceName);
+            $serviceConfig = Config::inst()->get(Injector::class, $serviceName);
 
-            if (!empty($serviceConfig)) {
+            if (is_array($serviceConfig) && !empty($serviceConfig)) {
                 $serviceConfig = static::addRedirectUriToServiceConfig($serviceConfig);
-                // Config::inst()->update(Injector::class, $serviceName, $serviceConfig); // @todo - sort out a way to do this
-                Injector::inst()->load(array($serviceName => $serviceConfig));
+                Config::modify()->set(Injector::class, $serviceName, $serviceConfig);
+                Injector::inst()->load([$serviceName => $serviceConfig]);
             }
         }
     }
@@ -84,7 +85,7 @@ class Helper
      */
     protected static function getRedirectUri()
     {
-        $configUri = Config::inst()->get(__CLASS__, 'default_redirect_uri');
+        $configUri = Config::inst()->get(self::class, 'default_redirect_uri');
         if ($configUri) {
             return $configUri;
         }

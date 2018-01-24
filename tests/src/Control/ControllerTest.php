@@ -6,6 +6,9 @@ use Bigfork\SilverStripeOAuth\Client\Control\Controller;
 use Bigfork\SilverStripeOAuth\Client\Factory\ProviderFactory;
 use Bigfork\SilverStripeOAuth\Client\Handler\TokenHandler;
 use Bigfork\SilverStripeOAuth\Client\Test\TestCase;
+use Embed\Providers\Provider;
+use League\OAuth2\Client\Provider\GenericProvider;
+use League\OAuth2\Client\Token\AccessToken;
 use ReflectionMethod;
 use SilverStripe\Control\Director;
 use SilverStripe\Control\HTTPRequest;
@@ -14,6 +17,7 @@ use SilverStripe\Control\HTTPResponse_Exception;
 use SilverStripe\Control\Session;
 use SilverStripe\Core\Config\Config;
 use SilverStripe\Core\Injector\Injector;
+use SilverStripe\Core\Injector\InjectorLoader;
 
 class ControllerTest extends TestCase
 {
@@ -21,56 +25,74 @@ class ControllerTest extends TestCase
     {
         $back = Director::absoluteBaseURL() . 'test/';
         $controller = new Controller;
-        $reflectionMethod = new ReflectionMethod(
-            Controller::class,
-            'findBackUrl'
-        );
+        $reflectionMethod = new ReflectionMethod(Controller::class, 'findBackUrl');
         $reflectionMethod->setAccessible(true);
 
-        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar']);
+        $mockSession = $this->getConstructorlessMock(Session::class, ['get']);
+        $mockSession->expects($this->exactly(2))
+            ->method('get')
+            ->with('BackURL')
+            ->will($this->returnValue($back));
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getSession']);
+        $mockRequest->expects($this->exactly(3))
+            ->method('getSession')
+            ->will($this->returnValue($mockSession));
+        $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
+
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getSession', 'requestVar']);
+        $mockRequest->expects($this->exactly(1))
+            ->method('getSession')
+            ->will($this->returnValue(null));
         $mockRequest->expects($this->exactly(2))
             ->method('requestVar')
             ->with('BackURL')
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar', 'isAjax', 'getHeader']);
-        $mockRequest->expects($this->at(0))
+        $mockRequest = $this->getConstructorlessMock(
+            HTTPRequest::class,
+            ['getSession', 'requestVar', 'isAjax', 'getHeader']
+        );
+        $mockRequest->expects($this->exactly(1))
+            ->method('getSession')
+            ->will($this->returnValue(null));
+        $mockRequest->expects($this->exactly(1))
             ->method('requestVar')
             ->with('BackURL')
             ->will($this->returnValue(null));
-        $mockRequest->expects($this->at(1))
+        $mockRequest->expects($this->exactly(1))
             ->method('isAjax')
             ->will($this->returnValue(true));
-        $mockRequest->expects($this->at(2))
-            ->method('getHeader')
-            ->with('X-Backurl')
-            ->will($this->returnValue($back));
-        $mockRequest->expects($this->at(3))
+        $mockRequest->expects($this->exactly(2))
             ->method('getHeader')
             ->with('X-Backurl')
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar', 'isAjax', 'getHeader']);
-        $mockRequest->expects($this->at(0))
+        $mockRequest = $this->getConstructorlessMock(
+            HTTPRequest::class,
+            ['getSession', 'requestVar', 'isAjax', 'getHeader']
+        );
+        $mockRequest->expects($this->exactly(1))
+            ->method('getSession')
+            ->will($this->returnValue(null));
+        $mockRequest->expects($this->exactly(1))
             ->method('requestVar')
             ->with('BackURL')
             ->will($this->returnValue(null));
-        $mockRequest->expects($this->at(1))
+        $mockRequest->expects($this->exactly(1))
             ->method('isAjax')
             ->will($this->returnValue(false));
-        $mockRequest->expects($this->at(2))
-            ->method('getHeader')
-            ->with('Referer')
-            ->will($this->returnValue($back));
-        $mockRequest->expects($this->at(3))
+        $mockRequest->expects($this->exactly(2))
             ->method('getHeader')
             ->with('Referer')
             ->will($this->returnValue($back));
         $this->assertEquals($back, $reflectionMethod->invoke($controller, $mockRequest));
 
-        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['requestVar']);
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getSession', 'requestVar']);
+        $mockRequest->expects($this->exactly(1))
+            ->method('getSession')
+            ->will($this->returnValue(null));
         $mockRequest->expects($this->exactly(2))
             ->method('requestVar')
             ->with('BackURL')
@@ -81,11 +103,8 @@ class ControllerTest extends TestCase
     public function testGetReturnUrl()
     {
         $back = Director::absoluteBaseURL() . 'test/';
-        $controller = new Controller();
-        $reflectionMethod = new ReflectionMethod(
-            Controller::class,
-            'getReturnUrl'
-        );
+        $controller = new Controller;
+        $reflectionMethod = new ReflectionMethod(Controller::class, 'getReturnUrl');
         $reflectionMethod->setAccessible(true);
 
         $mockSession = $this->getConstructorlessMock(Session::class, ['get']);
@@ -94,7 +113,7 @@ class ControllerTest extends TestCase
             ->with('oauth2.backurl')
             ->will($this->returnValue($back));
 
-        $controller->setSession($mockSession);
+        $controller->getRequest()->setSession($mockSession);
         $this->assertEquals($back, $reflectionMethod->invoke($controller));
 
         $mockSession = $this->getConstructorlessMock(Session::class, ['get']);
@@ -103,15 +122,12 @@ class ControllerTest extends TestCase
             ->with('oauth2.backurl')
             ->will($this->returnValue('http://1337h4x00r.com/geniune-oauth-url/i-promise'));
 
-        $controller->setSession($mockSession);
+        $controller->getRequest()->setSession($mockSession);
         $this->assertEquals(Director::absoluteBaseURL(), $reflectionMethod->invoke($controller));
     }
 
     public function testAuthenticate()
     {
-        // Store original
-        $injector = Injector::inst();
-
         $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getVar']);
         $mockRequest->expects($this->at(0))
             ->method('getVar')
@@ -127,7 +143,7 @@ class ControllerTest extends TestCase
             ->will($this->returnValue([])); // Leave scopes empty to assert that getDefaultScopes() is called
 
         $mockProvider = $this->getConstructorlessMock(
-            'League\OAuth2\Client\Provider\GenericProvider',
+            GenericProvider::class,
             ['getDefaultScopes', 'getAuthorizationUrl', 'getState']
         );
         $mockProvider->expects($this->at(0))
@@ -141,10 +157,9 @@ class ControllerTest extends TestCase
             ->method('getState')
             ->will($this->returnValue('mockstate'));
 
-        $mockProviderFactory = $this->getMock(
-            ProviderFactory::class,
-            ['getProvider']
-        );
+        $mockProviderFactory = $this->getMockBuilder(ProviderFactory::class)
+            ->setMethods(['getProvider'])
+            ->getMock();
         $mockProviderFactory->expects($this->once())
             ->method('getProvider')
             ->with('ProviderName')
@@ -161,16 +176,17 @@ class ControllerTest extends TestCase
                 'backurl' => 'http://mysite.com/return'
             ]);
 
-        $mockInjector = $this->getMock(Injector::class, ['get']);
+        $mockInjector = $this->getMockBuilder(Injector::class)
+            ->setMethods(['get'])
+            ->getMock();
         $mockInjector->expects($this->once())
             ->method('get')
-            ->with('ProviderFactory')
+            ->with(ProviderFactory::class)
             ->will($this->returnValue($mockProviderFactory));
 
-        $mockController = $this->getMock(
-            Controller::class,
-            ['findBackUrl', 'redirect']
-        );
+        $mockController = $this->getMockBuilder(Controller::class)
+            ->setMethods(['findBackUrl', 'redirect'])
+            ->getMock();
         $mockController->expects($this->at(0))
             ->method('findBackUrl')
             ->with($mockRequest)
@@ -178,15 +194,16 @@ class ControllerTest extends TestCase
         $mockController->expects($this->at(1))
             ->method('redirect')
             ->with('http://example.com/oauth')
-            ->will($this->returnValue($response = new HTTPResponse()));
+            ->will($this->returnValue($response = new HTTPResponse));
 
-        Injector::set_inst($mockInjector);
+        // Inject mock
+        InjectorLoader::inst()->pushManifest($mockInjector);
 
-        $mockController->setSession($mockSession);
+        $mockRequest->setSession($mockSession);
         $this->assertSame($response, $mockController->authenticate($mockRequest));
 
         // Restore things
-        Injector::set_inst($injector);
+        InjectorLoader::inst()->popManifest();
     }
 
     public function testAuthenticateMissingRequiredData()
@@ -208,7 +225,7 @@ class ControllerTest extends TestCase
         $controller = new Controller();
         try {
             $response = $controller->authenticate($mockRequest);
-            $this->fail('HTTPResponse_Exception was not thrown');
+            $this->fail('SS_HTTPResponse_Exception was not thrown');
         } catch (HTTPResponse_Exception $e) {
             $this->assertEquals(404, $e->getResponse()->getStatusCode());
         }
@@ -225,38 +242,35 @@ class ControllerTest extends TestCase
             ->with('code')
             ->will($this->returnValue('12345'));
 
-        $mockAccessToken = $this->getConstructorlessMock('League\OAuth2\Client\Token\AccessToken');
+        $mockAccessToken = $this->getConstructorlessMock(AccessToken::class);
 
-        $mockProvider = $this->getConstructorlessMock(
-            'League\OAuth2\Client\Provider\GenericProvider',
-            ['getAccessToken']
-        );
+        $mockProvider = $this->getConstructorlessMock(GenericProvider::class, ['getAccessToken']);
         $mockProvider->expects($this->once())
             ->method('getAccessToken')
             ->with('authorization_code', ['code' => '12345'])
             ->will($this->returnValue($mockAccessToken));
 
-        $mockProviderFactory = $this->getMock(
-            ProviderFactory::class,
-            ['getProvider']
-        );
+        $mockProviderFactory = $this->getMockBuilder(ProviderFactory::class)
+            ->setMethods(['getProvider'])
+            ->getMock();
         $mockProviderFactory->expects($this->once())
             ->method('getProvider')
             ->with('ProviderName')
             ->will($this->returnValue($mockProvider));
 
-        $mockTokenHandler = $this->getMock(
-            TokenHandler::class,
-            ['handleToken']
-        );
+        $mockTokenHandler = $this->getMockBuilder(TokenHandler::class)
+            ->setMethods(['handleToken'])
+            ->getMock();
         $mockTokenHandler->expects($this->once())
             ->method('handleToken')
             ->with($mockAccessToken, $mockProvider);
 
-        $mockInjector = $this->getMock(Injector::class, ['get', 'create']);
+        $mockInjector = $this->getMockBuilder(Injector::class)
+            ->setMethods(['get', 'create'])
+            ->getMock();
         $mockInjector->expects($this->at(0))
             ->method('get')
-            ->with('ProviderFactory')
+            ->with(ProviderFactory::class)
             ->will($this->returnValue($mockProviderFactory));
         $mockInjector->expects($this->at(1))
             ->method('create')
@@ -276,55 +290,51 @@ class ControllerTest extends TestCase
             ->method('clear')
             ->with('oauth2');
 
-        $mockController = $this->getMock(
-            Controller::class,
-            ['getSession', 'validateState', 'getHandlersForContext', 'getReturnUrl', 'redirect']
-        );
+        $mockController = $this->getMockBuilder(Controller::class)
+            ->setMethods(['validateState', 'getHandlersForContext', 'getReturnUrl', 'redirect'])
+            ->getMock();
         $mockController->expects($this->at(0))
-            ->method('getSession')
-            ->will($this->returnValue($mockSession));
-        $mockController->expects($this->at(1))
             ->method('validateState')
             ->with($mockRequest)
             ->will($this->returnValue(true));
-        $mockController->expects($this->at(2))
+        $mockController->expects($this->at(1))
             ->method('getReturnUrl')
             ->will($this->returnValue('http://mysite.com/return'));
-        $mockController->expects($this->at(3))
+        $mockController->expects($this->at(2))
             ->method('getHandlersForContext')
             ->with('testcontext')
             ->will($this->returnValue([['priority' => 1, 'context' => 'testcontext', 'class' => 'TestTokenHandler']]));
-        $mockController->expects($this->at(4))
+        $mockController->expects($this->at(3))
             ->method('redirect')
             ->with('http://mysite.com/return')
-            ->will($this->returnValue($response = new HTTPResponse()));
+            ->will($this->returnValue($response = new HTTPResponse));
 
-        Injector::set_inst($mockInjector);
+        // Inject mock
+        InjectorLoader::inst()->pushManifest($mockInjector);
 
-        $mockController->setSession($mockSession);
+        $mockRequest->setSession($mockSession);
         $this->assertSame($response, $mockController->callback($mockRequest));
 
         // Restore things
-        Injector::set_inst($injector);
+        InjectorLoader::inst()->popManifest();
     }
 
     public function testCallbackInvalidState()
     {
-        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class);
-
         $mockSession = $this->getConstructorlessMock(Session::class, ['clear']);
         $mockSession->expects($this->once())
             ->method('clear')
             ->with('oauth2');
 
-        $mockController = $this->getMock(
-            Controller::class,
-            ['getSession', 'validateState']
-        );
-        $mockController->expects($this->at(0))
+        $mockRequest = $this->getConstructorlessMock(HTTPRequest::class, ['getSession']);
+        $mockRequest->expects($this->once())
             ->method('getSession')
             ->will($this->returnValue($mockSession));
-        $mockController->expects($this->at(1))
+
+        $mockController = $this->getMockBuilder(Controller::class)
+            ->setMethods(['validateState'])
+            ->getMock();
+        $mockController->expects($this->at(0))
             ->method('validateState')
             ->with($mockRequest)
             ->will($this->returnValue(false));
@@ -339,26 +349,21 @@ class ControllerTest extends TestCase
     }
 
     /**
-     * @expectedException Exception
+     * @expectedException \Exception
      */
     public function testGetHandlersForContextWithNoHandlers()
     {
-        Config::inst()->remove(Controller::class, 'token_handlers');
-        Config::inst()->update(Controller::class, 'token_handlers', []);
+        Config::modify()->set(Controller::class, 'token_handlers', []);
 
         $controller = new Controller;
-        $reflectionMethod = new ReflectionMethod(
-            Controller::class,
-            'getHandlersForContext'
-        );
+        $reflectionMethod = new ReflectionMethod(Controller::class, 'getHandlersForContext');
         $reflectionMethod->setAccessible(true);
         $reflectionMethod->invoke($controller);
     }
 
     public function testGetHandlersForContext()
     {
-        Config::inst()->remove(Controller::class, 'token_handlers');
-        Config::inst()->update(Controller::class, 'token_handlers', [
+        Config::modify()->set(Controller::class, 'token_handlers', [
             'globalhandlertwo' => [
                 'priority' => 3, 'context' => '*', 'class' => 'GlobalHandlerTwo'
             ],
@@ -374,10 +379,7 @@ class ControllerTest extends TestCase
         ]);
 
         $controller = new Controller;
-        $reflectionMethod = new ReflectionMethod(
-            Controller::class,
-            'getHandlersForContext'
-        );
+        $reflectionMethod = new ReflectionMethod(Controller::class, 'getHandlersForContext');
         $reflectionMethod->setAccessible(true);
 
         // Not giving a context should run all "global" handlers, but no named ones

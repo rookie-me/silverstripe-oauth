@@ -3,4 +3,4 @@ Name: oauth_routes
 ---
 SilverStripe\Control\Director:
   rules:
-    'oauth': 'Bigfork\SilverStripeOAuth\Client\Control\Controller'
+    'oauth//$Action!': 'Bigfork\SilverStripeOAuth\Client\Control\Controller'

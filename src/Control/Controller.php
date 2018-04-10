@@ -169,6 +169,7 @@ class Controller extends SilverStripeController
         } finally {
             $session->clear('oauth2');
         }
+        $this->extend('updateCallbackReturnURL', $returnUrl, $provider);
 
         return $this->redirect($returnUrl);
     }
